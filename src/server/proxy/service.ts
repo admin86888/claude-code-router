@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { chmodSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import http, { type ClientRequest, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import https from "node:https";
 import net, { type Socket } from "node:net";
@@ -119,6 +119,7 @@ const maxNetworkCaptureEntries = 200;
 const defaultSystemProxyRestoreTimeoutMs = 10_000;
 const upstreamProxyConnectTimeoutMs = 30_000;
 const upstreamRequestIdleTimeoutMs = 120_000;
+const linuxCaBundleFile = "/etc/ssl/certs/ca-certificates.crt";
 
 class ProxyService {
   private authority?: CertificateAuthority;
@@ -598,6 +599,30 @@ class ProxyService {
       }
     }
 
+    if (process.platform === "linux") {
+      try {
+        const bundle = existsSync(linuxCaBundleFile) ? readFileSync(linuxCaBundleFile, "utf8") : "";
+        if (linuxCaBundleContainsCertificateFingerprint(bundle, base.caFingerprintSha256)) {
+          return {
+            ...base,
+            canInstall: false,
+            message: "Proxy CA certificate is trusted by the system trust store.",
+            state: "trusted",
+            trusted: true
+          };
+        }
+        return {
+          ...base,
+          canInstall: false,
+          message: "Proxy CA certificate is not installed in the Debian system trust store. Run scripts/install-proxy-ca.sh, then click Check Trust again.",
+          state: "untrusted",
+          trusted: false
+        };
+      } catch {
+        // Fall through to the unsupported manual-import guidance below.
+      }
+    }
+
     return {
       ...base,
       canInstall: false,
@@ -809,6 +834,27 @@ class ProxyService {
         : result.status
     };
   }
+}
+
+export function linuxCaBundleContainsCertificateFingerprint(bundle: string, fingerprint: string | undefined): boolean {
+  const normalizedFingerprint = normalizeFingerprint(fingerprint || "");
+  if (!normalizedFingerprint) {
+    return false;
+  }
+
+  const matches = bundle.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) ?? [];
+  return matches.some((pem) => linuxPemCertificateFingerprintSha256(pem) === normalizedFingerprint);
+}
+
+function linuxPemCertificateFingerprintSha256(pem: string): string {
+  const der = Buffer.from(
+    pem
+      .replace(/-----BEGIN CERTIFICATE-----/g, "")
+      .replace(/-----END CERTIFICATE-----/g, "")
+      .replace(/\s+/g, ""),
+    "base64"
+  );
+  return createHash("sha256").update(der).digest("hex").toUpperCase();
 }
 
 export const proxyService = new ProxyService();

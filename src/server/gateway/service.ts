@@ -260,6 +260,7 @@ let warnedMissingCursorOpenAICompatContext = false;
 const rawTraceSyncPath = "/__ccr/raw-trace-sync";
 const gatewayEntryOverrideEnv = "CCR_GATEWAY_ENTRY";
 const gatewayPackageCandidates = ["@the-next-ai/ai-gateway", "gateway"];
+const openAiChatCompatibilityPluginKey = "ccr-openai-chat-compatibility";
 const codexPatchBridgeInstructionText = [
   "When modifying files, call virtual_apply_patch.",
   "Do not use exec_command or write_stdin to edit files, including shell redirection, heredocs, cat >, tee, sed -i, perl -i, python, node scripts, or similar shell-based edits.",
@@ -1088,10 +1089,10 @@ async function writeCoreGatewayConfig(
   assertLoopbackCoreHost(config.gateway.coreHost);
   mkdirSync(dirname(config.gateway.generatedConfigFile), { mode: privateDirMode, recursive: true });
   const pluginCoreGatewayConfig = pluginService.getCoreGatewayConfig();
-  const providerPlugins = withCodexOauthRuntimeDefaults([
+  const providerPlugins = withOpenAiChatCompatibilityDefaults(withCodexOauthRuntimeDefaults([
     ...(config.providerPlugins ?? []),
     ...pluginService.getCoreProviderPlugins()
-  ]);
+  ]));
   const codexOauthProviderNames = codexOauthLocalProviderNames(providerPlugins);
   const virtualModelProfiles = normalizeCoreGatewayVirtualModelProfiles(withCodexCompatibleVirtualModelProfiles(withFusionVirtualModelAliases([
     ...(config.virtualModelProfiles ?? []),
@@ -1364,6 +1365,28 @@ function withCodexBackendRequestTransform(request: unknown): Record<string, unkn
     ...currentRequest,
     bodyRemove: uniqueStrings([...bodyRemove, "max_output_tokens"])
   };
+}
+
+export function withOpenAiChatCompatibilityDefaults(providerPlugins: unknown[]): unknown[] {
+  if (providerPlugins.some((plugin) => isOpenAiChatCompatibilityProviderPlugin(plugin))) {
+    return providerPlugins;
+  }
+
+  return [
+    ...providerPlugins,
+    {
+      enabled: true,
+      key: openAiChatCompatibilityPluginKey,
+      provider: "openai",
+      request: {
+        bodyRemove: ["reasoning_split"]
+      }
+    }
+  ];
+}
+
+function isOpenAiChatCompatibilityProviderPlugin(value: unknown): boolean {
+  return isRecord(value) && stringValue(value.key) === openAiChatCompatibilityPluginKey;
 }
 
 function addProviderNameVariants(names: Set<string>, providerName: string | undefined): void {

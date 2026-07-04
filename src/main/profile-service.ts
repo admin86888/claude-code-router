@@ -535,7 +535,7 @@ function claudeCodeWrapperFilename(profile: ProfileConfig): string {
     : `ccr-claude-code-wrapper-${slug}`;
 }
 
-function claudeCodeWrapperShellScript(config: AppConfig, profile: ProfileConfig, runtimeFile: string, apiKeyHelperFile: string): string {
+export function claudeCodeWrapperShellScript(config: AppConfig, profile: ProfileConfig, runtimeFile: string, apiKeyHelperFile: string): string {
   const realClaude = profile.env?.CCR_CLAUDE_CODE_BIN?.trim() || "claude";
   const surface = normalizeProfileSurface(profile.surface);
   const remoteEndpoint = `${gatewayEndpoint(config)}/__ccr/remote`;
@@ -561,12 +561,17 @@ function claudeCodeWrapperShellScript(config: AppConfig, profile: ProfileConfig,
     `if [ -z "\${CCR_REMOTE_SYNC_PROFILE_ID:-}" ]; then CCR_REMOTE_SYNC_PROFILE_ID=${shellQuote(profile.id || profile.name || "claude-code")}; fi`,
     `if [ -z "\${CCR_REMOTE_SYNC_PROFILE_NAME:-}" ]; then CCR_REMOTE_SYNC_PROFILE_NAME=${shellQuote(profile.name || profile.id || "Claude Code")}; fi`,
     "export CCR_REMOTE_SYNC_ENABLED CCR_REMOTE_SYNC_ENDPOINT CCR_REMOTE_SYNC_API_KEY_HELPER CCR_REMOTE_SYNC_PROFILE_ID CCR_REMOTE_SYNC_PROFILE_NAME",
+    "if [ -z \"${ANTHROPIC_API_KEY:-}\" ] && [ -x \"$CCR_REMOTE_SYNC_API_KEY_HELPER\" ]; then",
+    "  ANTHROPIC_API_KEY=\"$($CCR_REMOTE_SYNC_API_KEY_HELPER)\"",
+    "fi",
+    "if [ -z \"${ANTHROPIC_AUTH_TOKEN:-}\" ]; then ANTHROPIC_AUTH_TOKEN=\"$ANTHROPIC_API_KEY\"; fi",
+    "export ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN",
     ...nodeRuntimeShellExecLines(runtimeFile),
     ""
   ].join("\n");
 }
 
-function claudeCodeWrapperCmdScript(config: AppConfig, profile: ProfileConfig, runtimeFile: string, apiKeyHelperFile: string): string {
+export function claudeCodeWrapperCmdScript(config: AppConfig, profile: ProfileConfig, runtimeFile: string, apiKeyHelperFile: string): string {
   const realClaude = profile.env?.CCR_CLAUDE_CODE_BIN?.trim() || "claude";
   const surface = normalizeProfileSurface(profile.surface);
   const remoteEndpoint = `${gatewayEndpoint(config)}/__ccr/remote`;
@@ -590,6 +595,8 @@ function claudeCodeWrapperCmdScript(config: AppConfig, profile: ProfileConfig, r
     `if not defined CCR_REMOTE_SYNC_API_KEY_HELPER ${cmdSetLine("CCR_REMOTE_SYNC_API_KEY_HELPER", apiKeyHelperFile)}`,
     `if not defined CCR_REMOTE_SYNC_PROFILE_ID ${cmdSetLine("CCR_REMOTE_SYNC_PROFILE_ID", profile.id || profile.name || "claude-code")}`,
     `if not defined CCR_REMOTE_SYNC_PROFILE_NAME ${cmdSetLine("CCR_REMOTE_SYNC_PROFILE_NAME", profile.name || profile.id || "Claude Code")}`,
+    `if not defined ANTHROPIC_API_KEY if exist "%CCR_REMOTE_SYNC_API_KEY_HELPER%" for /f "usebackq delims=" %%A in ("%CCR_REMOTE_SYNC_API_KEY_HELPER%") do set "ANTHROPIC_API_KEY=%%A"`,
+    `if not defined ANTHROPIC_AUTH_TOKEN set "ANTHROPIC_AUTH_TOKEN=%ANTHROPIC_API_KEY%"`,
     ...nodeRuntimeCmdExecLines(runtimeFile),
     ""
   ].join("\r\n");

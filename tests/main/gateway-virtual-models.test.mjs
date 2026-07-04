@@ -18,7 +18,8 @@ import {
   transformOpenAiChatHostedWebSearchSseText,
   transformOpenAiResponsesHostedWebSearchResponseValue,
   transformOpenAiResponsesHostedWebSearchSseText,
-  normalizeCoreGatewayVirtualModelProfiles
+  normalizeCoreGatewayVirtualModelProfiles,
+  withOpenAiChatCompatibilityDefaults
 } from "../../src/server/gateway/service.ts";
 
 test("gateway config rewrites Fusion fixed base and vision models to core provider selectors", () => {
@@ -77,6 +78,34 @@ test("gateway config rewrites Fusion fixed base and vision models to core provid
     /^provider-zhipu-ai-china---coding-plan-[a-f0-9]{10}::openai_chat_completions::cred:test-1\/glm-5v-turbo$/
   );
   assert.equal(profiles[0].baseModel.fixedModel, `${providerName}/glm-5.2`);
+});
+
+test("gateway appends OpenAI chat compatibility plugin to drop unsupported reasoning_split", () => {
+  const plugins = withOpenAiChatCompatibilityDefaults([
+    {
+      enabled: true,
+      key: "existing",
+      provider: "openai",
+      request: { bodyRemove: ["custom"] }
+    }
+  ]);
+
+  assert.equal(plugins.length, 2);
+  assert.equal(plugins[1].key, "ccr-openai-chat-compatibility");
+  assert.equal(plugins[1].provider, "openai");
+  assert.deepEqual(plugins[1].request.bodyRemove, ["reasoning_split"]);
+  assert.equal(plugins[0].key, "existing");
+});
+
+test("gateway keeps user-defined OpenAI chat compatibility plugin", () => {
+  const customPlugin = {
+    enabled: true,
+    key: "ccr-openai-chat-compatibility",
+    provider: "openai",
+    request: { bodyRemove: ["reasoning_split", "custom"] }
+  };
+
+  assert.deepEqual(withOpenAiChatCompatibilityDefaults([customPlugin]), [customPlugin]);
 });
 
 test("gateway config normalizes Fusion web search tool names for native Anthropic search triggers", () => {

@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { restoreInactiveGlobalProfileConfigs } from "../../src/main/profile-service.ts";
+import { claudeCodeWrapperCmdScript, claudeCodeWrapperShellScript, restoreInactiveGlobalProfileConfigs } from "../../src/main/profile-service.ts";
 
 test("profile service restores managed global Claude settings when only CCR-scoped Claude profiles are active", () => {
   const previousHome = process.env.HOME;
@@ -105,4 +105,35 @@ test("profile service keeps managed global Claude settings when a global Claude 
     }
     rmSync(home, { force: true, recursive: true });
   }
+});
+
+test("Claude Code wrapper exports the CCR profile API key for CLI auth", () => {
+  const config = {
+    APIKEY: "ccr-default",
+    APIKEYS: [],
+    botGateway: { authType: "", platform: "none", profiles: [] },
+    gateway: { host: "127.0.0.1", port: 3457 },
+    profile: { profiles: [] },
+    Providers: [],
+    Router: {}
+  };
+  const profile = {
+    agent: "claude-code",
+    enabled: true,
+    env: {},
+    id: "claude-main",
+    model: "litellm/deepseek-v4-flash-cc",
+    name: "Claude Main",
+    scope: "ccr",
+    smallFastModel: "",
+    surface: "cli"
+  };
+
+  const shellWrapper = claudeCodeWrapperShellScript(config, profile, "/tmp/ccr-runtime.js", "/tmp/ccr-api-key");
+  assert.match(shellWrapper, /ANTHROPIC_API_KEY="\$\(\$CCR_REMOTE_SYNC_API_KEY_HELPER\)"/);
+  assert.match(shellWrapper, /export ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN/);
+
+  const cmdWrapper = claudeCodeWrapperCmdScript(config, profile, "C:\\ccr\\runtime.js", "C:\\ccr\\api-key.cmd");
+  assert.match(cmdWrapper, /if not defined ANTHROPIC_API_KEY/);
+  assert.match(cmdWrapper, /set "ANTHROPIC_AUTH_TOKEN=%ANTHROPIC_API_KEY%"/);
 });
